@@ -96,7 +96,7 @@ function key(k){dispatchEvent(new KeyboardEvent('keydown',{key:k}))}
 function set(v){on=v;document.body.classList.toggle('editing',on);
  [].forEach.call(document.querySelectorAll('.tx'),function(t){if(on)t.setAttribute('contenteditable','true');else t.removeAttribute('contenteditable')});
  var bar=document.getElementById('edbar');
- if(on&&!bar){bar=document.createElement('div');bar.id='edbar';bar.innerHTML='<span>Mod editare</span><button data-a="prev">◀</button><button data-a="next">▶</button><button data-a="save" class="pr">Salvează</button><button data-a="exit">Ieși</button>';document.body.appendChild(bar)}
+ if(on&&!bar){bar=document.createElement('div');bar.id='edbar';bar.innerHTML='<span>Mod editare</span><button data-a="prev">◀</button><button data-a="next">▶</button><button data-a="save" class="pr">Salvează pe GitHub</button><button data-a="dl" title="Descarcă fișierul HTML">⬇</button><button data-a="exit">Ieși</button>';document.body.appendChild(bar)}
  if(!on&&bar)bar.remove();if(!on&&document.activeElement)document.activeElement.blur()}
 function html(){var c=document.documentElement.cloneNode(true);
  ['#edbar','#edbtn','#edcss','#toast'].forEach(function(s){var e=c.querySelector(s);if(e)e.remove()});
@@ -104,7 +104,23 @@ function html(){var c=document.documentElement.cloneNode(true);
  [].forEach.call(c.querySelectorAll('.slide.on'),function(e){e.classList.remove('on')});
  var bd=c.querySelector('body');bd.classList.remove('editing','idle');if(!bd.className)bd.removeAttribute('class');
  return '<!DOCTYPE html>\n'+c.outerHTML}
-function save(){var data=html();
+var API='https://api.github.com/repos/cristofor-dev/prezentare-comunicarea-in-cuplu',TK='gh-token-prezentare',busy=false;
+function tok(ask){var t='';try{t=localStorage.getItem(TK)||''}catch(e){}
+ if(!t&&ask){t=(prompt('Token GitHub (fine-grained, doar pentru repo-ul prezentare-comunicarea-in-cuplu, Contents: Read and write). Rămâne doar în acest browser.')||'').trim();if(t)try{localStorage.setItem(TK,t)}catch(e){}}
+ return t}
+function gh(t,path,m,body){return fetch(API+path,{method:m||'GET',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'},body:body?JSON.stringify(body):undefined}).then(function(r){
+ if(r.status===401){try{localStorage.removeItem(TK)}catch(e){}throw new Error('Tokenul nu e valid (l-am șters, îl poți introduce din nou).')}
+ if(!r.ok)return r.text().then(function(x){throw new Error('GitHub '+r.status+': '+x.slice(0,200))});return r.json()})}
+function save(){if(busy)return;var t=tok(true);if(!t)return;var data=html(),base,s=document.querySelector('#edbar button[data-a="save"]');
+ busy=true;if(s)s.textContent='Se salvează…';
+ gh(t,'/git/ref/heads/main').then(function(r){base=r.object.sha;return gh(t,'/git/commits/'+base)})
+ .then(function(c){return gh(t,'/git/blobs','POST',{content:data,encoding:'utf-8'}).then(function(b){return gh(t,'/git/trees','POST',{base_tree:c.tree.sha,tree:[{path:'index.html',mode:'100644',type:'blob',sha:b.sha}]})})})
+ .then(function(tr){return gh(t,'/git/commits','POST',{message:'Editare din prezentare',tree:tr.sha,parents:[base]})})
+ .then(function(c){return gh(t,'/git/refs/heads/main','PATCH',{sha:c.sha})})
+ .then(function(){alert('Salvat pe GitHub. Pe site apare în 1-2 minute (în alte browsere, până la 10 minute).')})
+ .catch(function(e){alert('Nu s-a salvat: '+e.message)})
+ .then(function(){busy=false;if(s)s.textContent='Salvează pe GitHub'})}
+function saveFile(){var data=html();
  if(window.showSaveFilePicker){showSaveFilePicker({suggestedName:FN,types:[{description:'HTML',accept:{'text/html':['.html']}}]}).then(function(h){return h.createWritable()}).then(function(w){return w.write(data).then(function(){return w.close()})}).then(function(){alert('Salvat.')}).catch(function(e){if(e&&e.name!=='AbortError')dl(data)});return}
  dl(data)}
 function dl(data){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'text/html'}));a.download=FN;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000)}
@@ -112,7 +128,7 @@ function inEd(t){return t&&t.closest&&t.closest('[contenteditable]')}
 addEventListener('click',function(e){var t=e.target;
  if(t.closest&&t.closest('#edbtn')){e.stopImmediatePropagation();set(true);return}
  var a=t.closest&&t.closest('#edbar button');
- if(a){e.stopImmediatePropagation();var x=a.dataset.a;if(x==='prev')key('ArrowLeft');else if(x==='next')key('ArrowRight');else if(x==='save')save();else set(false);return}
+ if(a){e.stopImmediatePropagation();var x=a.dataset.a;if(x==='prev')key('ArrowLeft');else if(x==='next')key('ArrowRight');else if(x==='save')save();else if(x==='dl')saveFile();else set(false);return}
  if(on)e.stopImmediatePropagation()},true);
 addEventListener('keydown',function(e){
  if(on&&inEd(e.target)){if(e.key==='Escape')e.target.blur();e.stopImmediatePropagation();return}
